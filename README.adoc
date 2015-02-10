@@ -11,4 +11,7 @@ Only intended for personal usage.
 
 the code is extremely dirty right now.
 
-I am extremely new to rust and pointers surely are giving me a headache.
+I am extremely new to rust and pointers, ownerships sure are giving me a headache.
+
+==== License
+Distributed under the Simplified BSD License, see the LICENSE file for more details.

@@ -1,7 +1,7 @@
 /*
 NOTE: this is only a mapping of my current thoughts
 
-assemblier.rs is responsible to construct the json instructions the
+vm_assemblier.rs is responsible to construct the json instructions the
 game will reference, the format will be in.
 
 [[0,-1],[0,-1],[0,-1],[1,-1],[1,-1],[1,-1],[1,0]]

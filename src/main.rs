@@ -1,10 +1,16 @@
 extern crate collections;
 extern crate serialize;
+
+mod assemblier;
+mod texture_assemblier;
+mod fileutils;
+
 use std::os;
 use std::old_io::File;
 use collections::str;
 use std::collections::HashMap;
 use serialize::{json, Encodable, Encoder};
+use std::path::Path;
 
 #[derive(Encodable)]
 struct FrameData {
@@ -20,9 +26,9 @@ fn main() {
   }
 }
 
-
 fn print_help() {
-  let help_msg: &str = "LunaUtils
+  let help_msg: &str =
+"LunaUtils
 converts frames.json file into clojure-friendly frames_vector.json and frames_vm.json
 ---------------------------
 Usage: lunautils framesjson";
@@ -30,9 +36,19 @@ Usage: lunautils framesjson";
 }
 
 fn do_job(filename: &String) {
-  //println!("{}", get_json_contents(&filename));
   let contents = parse_json_contents(&get_json_contents(&filename));
-  generate_frames_vector(contents);
+  let path = Path::new(&filename);
+  let parent_paths = match str::from_utf8(path.dirname()) {
+    Ok(s) => s,
+    Err(err) => panic!("cannot decipher parent_paths: {}", err),
+  };
+  generate_frames_vector(&contents, parent_paths);
+  generate_textures_vec(&contents, parent_paths);
+}
+
+fn generate_textures_vec(contents: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, parents_path: &str) {
+  let f = format!("{p}/{n}", p = parents_path, n = "textures.vec.json");
+  texture_assemblier::inscribe_texture_list(&f, &contents);
 }
 
 fn get_json_contents(filename: &String) -> String {
@@ -65,13 +81,10 @@ fn parse_json_contents(contents: &String) -> HashMap<String, HashMap<String, Vec
     Err(err) => panic!("Json Decoding Error! {}", err),
   };
   let map: HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>> = decode_results;
-  //for (k, v) in map.iter() {
-  //  println!("{}: \"{}\"", *k, "V");
-  //}
   return map;
 }
 
-fn buildup_frames_vector(data: HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>) -> Vec<FrameData>{
+fn buildup_frames_vector(data: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>) -> Vec<FrameData>{
   let mut final_vector: Vec<FrameData> = Vec::new();
   for (t, v) in data.iter() {
     final_vector.push(FrameData {texture: (*t).clone(), boxes: (*v).clone()});
@@ -88,6 +101,8 @@ fn encode_frames_vector(v: Vec<FrameData>)-> String{
   return r;
 }
 
-fn generate_frames_vector(data: HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>) {
-  println!("{}",encode_frames_vector(buildup_frames_vector(data)))
+fn generate_frames_vector(data: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, parents_path: &str) {
+  let c = encode_frames_vector(buildup_frames_vector(data));
+  let f = format!("{p}/{n}", p = parents_path, n = "frames.vec.json");
+  fileutils::save_file(&f, &c);
 }
