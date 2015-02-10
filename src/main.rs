@@ -1,7 +1,9 @@
 extern crate collections;
 extern crate serialize;
+extern crate "rustc-serialize" as rustc_serialize;
+extern crate regex;
 
-mod assemblier;
+mod inst_assemblier;
 mod texture_assemblier;
 mod fileutils;
 
@@ -10,13 +12,14 @@ use std::old_io::File;
 use collections::str;
 use std::collections::HashMap;
 use serialize::{json, Encodable, Encoder};
-use std::path::Path;
+use std::old_path::posix::Path;
 
 #[derive(Encodable)]
 struct FrameData {
   texture: String,
   boxes: HashMap<String, Vec<HashMap<String, i32>>>,
 }
+
 
 fn main() {
   let args = os::args();
@@ -36,7 +39,7 @@ Usage: lunautils framesjson";
 }
 
 fn do_job(filename: &String) {
-  let contents = parse_json_contents(&get_json_contents(&filename));
+  let contents = parse_json_contents(&fileutils::get_json_contents(&filename));
   let path = Path::new(&filename);
   let parent_paths = match str::from_utf8(path.dirname()) {
     Ok(s) => s,
@@ -44,6 +47,7 @@ fn do_job(filename: &String) {
   };
   generate_frames_vector(&contents, parent_paths);
   generate_textures_vec(&contents, parent_paths);
+  generate_vm_inst(&contents, parent_paths);
 }
 
 fn generate_textures_vec(contents: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, parents_path: &str) {
@@ -51,29 +55,7 @@ fn generate_textures_vec(contents: &HashMap<String, HashMap<String, Vec<HashMap<
   texture_assemblier::inscribe_texture_list(&f, &contents);
 }
 
-fn get_json_contents(filename: &String) -> String {
-  let path = Path::new(&filename);
-  let display = path.display();
-  let mut file = match File::open(&path) {
-    Ok(f) => f,
-    Err(err) => panic!("File Error! {}", err)
-  };
 
-  let content = file.read_to_end();
-
-  let r = match content {
-    Ok(s) => s,
-    Err(err) => panic!("Cannot read contents: {}", err)
-  };
-
-  let s = match str::from_utf8(&r) {
-    Ok(e) => e,
-    Err(err) => panic!("Invalid UTF-8 sequence: {}", err),
-  };
-
-  let result = String::from_str(&s);
-  return result;
-}
 
 fn parse_json_contents(contents: &String) -> HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>{
   let decode_results = match json::decode(&contents) {
@@ -105,4 +87,19 @@ fn generate_frames_vector(data: &HashMap<String, HashMap<String, Vec<HashMap<Str
   let c = encode_frames_vector(buildup_frames_vector(data));
   let f = format!("{p}/{n}", p = parents_path, n = "frames.vec.json");
   fileutils::save_file(&f, &c);
+}
+
+fn generate_vm_inst(contents: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, parents_path: &str) {
+  let f = format!("{p}/{n}", p = parents_path, n = "vm.json");
+  let flag_path = format!("{p}/{n}", p = parents_path, n = "flags.prod.json");
+  inst_assemblier::assemble(&f, &contents, &parse_flag_json(&fileutils::get_json_contents(&flag_path)));
+}
+
+fn parse_flag_json(contents: &str) -> HashMap<String, HashMap<String, i32>> {
+  let decode_results = match json::decode(&contents) {
+    Ok(s) => s,
+    Err(err) => panic!("Json Decoding Error! {}", err),
+  };
+  let map: HashMap<String, HashMap<String, i32>> = decode_results;
+  return map;
 }

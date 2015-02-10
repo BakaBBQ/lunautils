@@ -7,12 +7,13 @@ pub fn inscribe_texture_list(filename: &str, data: &HashMap<String, HashMap<Stri
   save2file_texture_list(texture_vec2json(build_texture_vec(data)), filename);
 }
 
-fn build_texture_vec(data: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>) -> Vec<String> {
+pub fn build_texture_vec(data: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>) -> Vec<String> {
   // I am not going to care much about performance here
   let mut result: Vec<String> = Vec::new();
   for key in data.keys() {
     result.push(key.clone());
   }
+  result.sort();
   return result;
 }
 
