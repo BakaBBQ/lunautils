@@ -55,8 +55,6 @@ fn generate_textures_vec(contents: &HashMap<String, HashMap<String, Vec<HashMap<
   texture_assemblier::inscribe_texture_list(&f, &contents);
 }
 
-
-
 fn parse_json_contents(contents: &String) -> HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>{
   let decode_results = match json::decode(&contents) {
     Ok(s) => s,

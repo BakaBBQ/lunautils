@@ -15,14 +15,18 @@ use regex::Regex;
 
 enum Inst {
   NOP = 0x00,
-  PUSH = 0x01,
+  LIT = 0x01,
   DEL = 0x02,
+  JMP = 0x03,
 
   // math operations
   PLUS = 0x10,
   SUB = 0x11,
   MULT = 0x12,
   DIV = 0x13,
+
+  //hooks
+  TEX = 0x30, // change current texture index, also changes the character's hitbox data
 
 
   END = 0xff, //end this frame
@@ -49,13 +53,56 @@ struct Frame {
 }
 
 impl Frame {
+  fn assemble_contents(&self, idle_frame_address: i32) -> Vec<i32>{
+    let mut assembling_inst: Vec<i32> = vec![Inst::LIT as i32, self.texture_id, Inst::TEX as i32];
+    for i in 0..self.duration() {
+      assembling_inst.push(Inst::END as i32);
+    }
+    return assembling_inst;
+  }
 
+  fn duration(&self) -> i32 {
+    let r = match self.flags.get("duration") {
+      Some(s) => s.clone(),
+      None => panic!("this frame does not have a duration flag"),
+    };
+    return r;
+  }
+}
+
+impl Move {
+  fn idle(&self) -> bool {
+    return self.first_frame_flag_val("idle") == 1;
+  }
+
+  fn first_frame(&self) -> &Frame {
+    return &self.frames[0];
+  }
+
+  fn first_frame_flag_val(&self, key: &str) -> i32 {
+    let f: &Frame = self.first_frame();
+    let r: &i32 = match f.flags.get(key) {
+      Some(v) => v,
+      None => panic!("Could not find key :{} in the flags of first frame", key),
+    };
+    return r.clone();
+  }
+
+  fn assemble_my_frames(&self, idle_frame_address: i32) -> Vec<i32>{
+    let mut r: Vec<i32> = Vec::new();
+    for f in self.frames.iter() {
+      r.push_all(&f.assemble_contents(idle_frame_address));
+    }
+    r.push_all(&[Inst::LIT as i32,idle_frame_address,Inst::JMP as i32]);
+    return r;
+  }
 }
 
 
 
 pub fn assemble(filename: &str, data: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, flags: &HashMap<String, HashMap<String, i32>>) {
-  save_with_json(filename, assemble_moves(group_file_vec(texture_assemblier::build_texture_vec(data)), data, flags));
+  //assemble_inst
+  save_with_json(filename, assemble_inst(assemble_moves(group_file_vec(texture_assemblier::build_texture_vec(data)), data, flags)));
 }
 
 fn group_file_vec(filenames: Vec<String>) -> HashMap<String, Vec<String>>{
@@ -77,16 +124,17 @@ fn group_file_vec(filenames: Vec<String>) -> HashMap<String, Vec<String>>{
       None => panic!("It matched and it does not return a desired value"),
     };
     if (groups.contains_key(file_pre)) {
-      let vec = match groups.get_mut(file_pre) {
-        Some(v) => v,
-        None => panic!("the group file vector passed the contains key check yet contains no value"),
-      };
 
-
-      vec.push(n.clone());
     } else {
       groups.insert(String::from_str(file_pre), Vec::new());
+      //vec.push(n.clone());
     }
+    let vec = match groups.get_mut(file_pre) {
+      Some(v) => v,
+      None => panic!("the group file vector passed the contains key check yet contains no value"),
+    };
+    vec.push(n.clone());
+    println!("Grouping: {}", n);
   }
   return groups;
 }
@@ -107,11 +155,22 @@ fn assemble_moves(groups: HashMap<String, Vec<String>>, data: &HashMap<String, H
     }
     iter_move.frames.sort_by(|a,b| a.texture_id.cmp(&b.texture_id));
     moves.push(iter_move);
+    moves.sort_by(|a,b| b.idle().cmp(&a.idle()));
   }
   return moves;
 }
 
-pub fn save_with_json(filepath: &str, contents: Vec<Move>) -> bool{
+fn assemble_inst(all_moves: Vec<Move>) -> Vec<i32>{
+  let mut r: Vec<i32> = Vec::new();
+  for m in all_moves.iter() {
+    r.push_all(&m.assemble_my_frames(0));
+  }
+  return r;
+}
+
+
+
+pub fn save_with_json(filepath: &str, contents: Vec<i32>) -> bool{
   let r = match json::encode(&contents) {
     Ok(s) => s,
     Err(err) => panic!("Json Encoding Error when building generic vecs: {}", err),
@@ -120,7 +179,7 @@ pub fn save_with_json(filepath: &str, contents: Vec<Move>) -> bool{
 }
 
 fn lookup_texture_id(texture_vec: &Vec<String>, texture_name: &str) -> i32{
-  // probably isn't the best way...
+  // isn't the best way...
   let mut r: i32 = 0;
   let mut p: i32 = 0;
   for i in 0..texture_vec.len() {
