@@ -32,7 +32,7 @@ fn main() {
 fn print_help() {
   let help_msg: &str =
 "LunaUtils
-converts frames.json file into clojure-friendly frames_vector.json and frames_vm.json
+converts frames.json file into clojure-friendly new json files
 ---------------------------
 Usage: lunautils framesjson";
   println!("{}", help_msg);
@@ -88,7 +88,7 @@ fn generate_frames_vector(data: &HashMap<String, HashMap<String, Vec<HashMap<Str
 }
 
 fn generate_vm_inst(contents: &HashMap<String, HashMap<String, Vec<HashMap<String, i32>>>>, parents_path: &str) {
-  let f = format!("{p}/{n}", p = parents_path, n = "vm.json");
+  let f = format!("{p}/{n}", p = parents_path, n = "inst.json");
   let flag_path = format!("{p}/{n}", p = parents_path, n = "flags.prod.json");
   inst_assemblier::assemble(&f, &contents, &parse_flag_json(&fileutils::get_json_contents(&flag_path)));
 }

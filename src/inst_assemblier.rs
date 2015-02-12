@@ -134,7 +134,7 @@ fn group_file_vec(filenames: Vec<String>) -> HashMap<String, Vec<String>>{
       None => panic!("the group file vector passed the contains key check yet contains no value"),
     };
     vec.push(n.clone());
-    println!("Grouping: {}", n);
+    //println!("Grouping: {}", n);
   }
   return groups;
 }
