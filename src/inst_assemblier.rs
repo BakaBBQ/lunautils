@@ -93,7 +93,7 @@ impl Move {
     for f in self.frames.iter() {
       r.push_all(&f.assemble_contents(idle_frame_address));
     }
-    r.push_all(&[Inst::LIT as i32,idle_frame_address,Inst::JMP as i32]);
+    r.push_all(&[Inst::JMP as i32, idle_frame_address]);
     return r;
   }
 }
