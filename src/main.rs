@@ -33,6 +33,8 @@ fn print_help() {
   let help_msg: &str =
 "LunaUtils
 converts frames.json file into clojure-friendly new json files
+
+the reason why we need json is because we need more jsons
 ---------------------------
 Usage: lunautils framesjson";
   println!("{}", help_msg);
