@@ -14,12 +14,12 @@ use std::collections::HashMap;
 use serialize::{json, Encodable, Encoder};
 use std::old_path::posix::Path;
 
+
 #[derive(Encodable)]
 struct FrameData {
   texture: String,
   boxes: HashMap<String, Vec<HashMap<String, i32>>>,
 }
-
 
 fn main() {
   let args = os::args();

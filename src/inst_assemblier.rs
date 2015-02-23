@@ -5,7 +5,7 @@ inst_assemblier.rs
 
 assemble the complete bytecode
 */
-
+static ALLOCATED_BYTECODES: i32 = 100;
 
 use serialize::json;
 use texture_assemblier;
@@ -87,8 +87,6 @@ struct InstFile {
 }
 
 impl Frame {
-
-
   fn get_velocity_x_change_inst(&self, vx_change: i32) -> Vec<i32>{
     return vec![Inst::GVX as i32, Inst::LIT as i32, vx_change, Inst::ADD as i32, Inst::SVX as i32];
   }
@@ -147,11 +145,13 @@ impl Frame {
       for possible_cancel_move_ids in all_possible_cancel_codes.iter() {
         assembling_inst.push_all(&self.get_intermission_insts_of_canceling(possible_cancel_move_ids.clone(), inst_file.get_move_location(possible_cancel_move_ids.clone())));
       }
-//      assembling_inst.push_all(&self.get_intermission_insts_of_canceling());
       assembling_inst.push(Inst::END as i32);
     }
 
     let rest_space: i32 = allocated_insts - (assembling_inst.len() as i32);
+    if rest_space <= 1 {
+      panic!("Space insufficient for additional bytes, possible jump error!");
+    }
     for i in 0..rest_space {
       assembling_inst.push(0x00);
     }
@@ -185,7 +185,7 @@ impl Move {
     let f: &Frame = self.first_frame();
     let r: &i32 = match f.flags.get(key) {
       Some(v) => v,
-      None => panic!("Could not find key :{} in the flags of first frame", key),
+      None => panic!("Could not find key __{}__ in the flags of first frame", key),
     };
     return r.clone();
   }
@@ -214,13 +214,14 @@ impl InstFile {
   fn assemble_final(&self) -> Vec<i32> {
     let possible_cancels = self.assemble_possible_cancels();
     let mut r: Vec<i32> = Vec::new();
+    self.output_cancel_tree(&possible_cancels);
     for m in self.moves.iter() {
       let c: i32 = m.move_id();
       let possible_cancels_for_one_file = match possible_cancels.get(&c) {
         Some(s) => s,
         None => panic!("possible_cancels not detected"),
       };
-      r.push_all(&m.assemble_my_frames(0, 50, possible_cancels_for_one_file.clone() , self));
+      r.push_all(&m.assemble_my_frames(0, ALLOCATED_BYTECODES, possible_cancels_for_one_file.clone() , self));
     }
     return r;
   }
@@ -237,6 +238,18 @@ impl InstFile {
       r.insert(key_move.move_id(), possible_cancels);
     }
     return r;
+  }
+
+  fn output_cancel_tree(&self, possible_cancels: &HashMap<i32, Vec<i32>>) {
+    println!("");
+    println!("Cancel Tree: ");
+    for (key_move, all_cancels) in possible_cancels.iter() {
+      println!("{}", format!("Printing cancel tree for {:X}", key_move).as_slice());
+      for single_cancel in all_cancels.iter() {
+        println!("{}", format!(" ---> {:X}", single_cancel).as_slice());
+      }
+    }
+    println!("");
   }
 
 // move code such as: 0x623b and etc
@@ -313,12 +326,26 @@ fn assemble_inst(all_moves: Vec<Move>) -> Vec<i32>{
   let mut register_map: HashMap<i32, i32> = HashMap::new();
   // at least this is clear
   let mut i = 0;
+  let mut j = 0;
   for m in all_moves.iter() {
-    register_map.insert(m.move_id(), i * 50);
+    register_map.insert(m.move_id(), j);
     i += 1;
+    j += (m.frames.len() as i32) * ALLOCATED_BYTECODES + 2;
+    //println!("{}", format!("{:X} has a length of {}", m.move_id(), m.frames.len()).as_slice());
   }
+
+  output_move_map(&register_map);
   let file_model = InstFile{moves: all_moves, dictionary: register_map};
   return file_model.assemble_final();
+}
+
+fn output_move_map(move_map: &HashMap<i32, i32>) {
+  println!("");
+  println!("MoveMap: ");
+  for (k,v) in move_map.iter() {
+    println!("{}", format!(" - {:X} -> {}", k, v));
+  }
+  println!("");
 }
 
 pub fn save_with_json(filepath: &str, contents: Vec<i32>) -> bool{
