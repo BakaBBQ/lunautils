@@ -5,58 +5,18 @@ inst_assemblier.rs
 
 assemble the complete bytecode
 */
-static ALLOCATED_BYTECODES: i32 = 100;
+static ALLOCATED_BYTECODES: i32 = 50;
 
 use serialize::json;
 use texture_assemblier;
+use canceling_assemblier;
 use std::collections::HashMap;
 use fileutils;
 use regex::Regex;
 
-enum Inst {
-  NOP = 0x00,
-  LIT = 0x01,
-  DEL = 0x02,
-  JMP = 0x03,
+use insts::{NOP,LIT,DEL,JMP,COND,JAS,GNP,GCP,ADD,SUB,MULT,DIV,TEX,GPX,GPY,GVX,GVY,SPX,SPY,SVX,SVY,SAX,SAY,GIP,END};
+use canceling_assemblier::CancelArea;
 
-  COND = 0x04, // conditional jump: performs as jmp if the top two stacks are equal, otherwise continues
-
-  // math operations
-  ADD = 0x10,
-  SUB = 0x11,
-  MULT = 0x12,
-  DIV = 0x13,
-
-  //hooks
-  TEX = 0x30, // change current texture index, also changes the character's hitbox data
-
-  //physics stuff. getters, pops the value. Velocities has nothing to do with current frames
-  GPX = 0x40,
-  GPY = 0x41,
-
-  GVX = 0x42, // vx
-  GVY = 0x43, // vy
-
-  GAX = 0x44,
-  GAY = 0x45,
-
-  //setters
-  SPX = 0x46,
-  SPY = 0x47,
-
-  SVX = 0x48,
-  SVY = 0x49,
-
-  SAX = 0x50,
-  SAY = 0x51,
-
-  //input
-  GIP = 0x60,
-
-
-
-  END = 0xff, //end this frame
-}
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Flag  {
@@ -68,39 +28,39 @@ struct Flag  {
 // The following representations are not the actual models for the datas.
 // They are only modeled on the purpose of generating bytecodes
 #[derive(Encodable)]
-struct Move {
+pub struct Move {
   frames: Vec<Frame>,
 }
 
 #[derive(Encodable)]
-struct Frame {
+pub struct Frame {
   texture_id: i32,
   flags: HashMap<String, i32>,
 }
 
 #[derive(Encodable)]
-struct InstFile {
+pub struct InstFile {
   moves: Vec<Move>,
 
   // a lookup hashmap for looking up move_ids -> move_bytecode-place
-  dictionary: HashMap<i32, i32>
+  dictionary: HashMap<i32, i32>,
 }
 
 impl Frame {
   fn get_velocity_x_change_inst(&self, vx_change: i32) -> Vec<i32>{
-    return vec![Inst::GVX as i32, Inst::LIT as i32, vx_change, Inst::ADD as i32, Inst::SVX as i32];
+    return vec![GVX, LIT, vx_change, ADD, SVX];
   }
 
   fn get_velocity_y_change_inst(&self, vy_change: i32) -> Vec<i32>{
-    return vec![Inst::GVY as i32, Inst::LIT as i32, vy_change, Inst::ADD as i32, Inst::SVY as i32];
+    return vec![GVY, LIT, vy_change, ADD, SVY];
   }
 
   fn get_set_velocity_x_inst(&self, vx_set: i32) -> Vec<i32>{
-    return vec![Inst::LIT as i32, vx_set, Inst::SVX as i32];
+    return vec![LIT, vx_set, SVX];
   }
 
   fn get_set_velocity_y_inst(&self, vy_set: i32) -> Vec<i32>{
-    return vec![Inst::LIT as i32, vy_set, Inst::SVY as i32];
+    return vec![LIT, vy_set, SVY];
   }
 
 
@@ -136,21 +96,30 @@ impl Frame {
     return r;
   }
 
-  fn assemble_contents(&self, idle_frame_address: i32, allocated_insts: i32, inst_file: &InstFile, all_possible_cancel_codes: Vec<i32>) -> Vec<i32>{
-    let mut assembling_inst: Vec<i32> = vec![Inst::LIT as i32, self.texture_id, Inst::TEX as i32];
-    assembling_inst.push_all(&self.get_set_velocity_x_inst(self.vx_set()));
-    assembling_inst.push_all(&self.get_set_velocity_y_inst(self.vy_set()));
+  fn assemble_contents(&self, idle_frame_address: i32, allocated_insts: i32, inst_file: &InstFile, all_possible_cancel_codes: Vec<i32>, cancel_area: &CancelArea, m: &Move) -> Vec<i32>{
+    let mut assembling_inst: Vec<i32> = vec![LIT, self.texture_id, TEX];
+
+    if (self.vx_set() != 0) {
+      assembling_inst.push_all(&self.get_set_velocity_x_inst(self.vx_set()));
+    }
+
+    if (self.vy_set() != 0) {
+      assembling_inst.push_all(&self.get_set_velocity_y_inst(self.vy_set()));
+    }
+
+
 
     for i in 0..self.duration() {
       for possible_cancel_move_ids in all_possible_cancel_codes.iter() {
-        assembling_inst.push_all(&self.get_intermission_insts_of_canceling(possible_cancel_move_ids.clone(), inst_file.get_move_location(possible_cancel_move_ids.clone())));
+        //assembling_inst.push_all(&self.get_intermission_insts_of_canceling(possible_cancel_move_ids.clone(), inst_file.get_move_location(possible_cancel_move_ids.clone())));
       }
-      assembling_inst.push(Inst::END as i32);
+      assembling_inst.push_all(&self.get_move_to_canceling_area_inst(m, &cancel_area.dictionary_by_level, inst_file.estimated_length()));
+      assembling_inst.push(END);
     }
 
     let rest_space: i32 = allocated_insts - (assembling_inst.len() as i32);
     if rest_space <= 1 {
-      panic!("Space insufficient for additional bytes, possible jump error!");
+      panic!("Space insufficient for additional bytes, will lead to possible jump error!");
     }
     for i in 0..rest_space {
       assembling_inst.push(0x00);
@@ -160,25 +129,42 @@ impl Frame {
 
   // very low level helper function
   fn get_intermission_insts_of_canceling(&self, move_id: i32, jmp_loc: i32) -> Vec<i32>{
-    return vec![Inst::GIP as i32, Inst::LIT as i32, move_id, Inst::COND as i32, jmp_loc as i32];
+    return vec![GIP, LIT, move_id, COND, jmp_loc];
+  }
+
+  fn get_move_to_canceling_area_inst(&self, my_move: &Move, cancel_dictionary: &HashMap<i32, i32>, offset: i32) -> Vec<i32>{
+    // gnp lit 5 add jmp my_cancel_level_pos
+    return vec![GNP, LIT, 5, ADD, JMP, self.get_jmp_pos_for_cancel_level(my_move.cancel_level(), cancel_dictionary, offset)];
+  }
+
+  fn get_jmp_pos_for_cancel_level(&self, x: i32, cancel_dictionary: &HashMap<i32, i32>, offset: i32) -> i32{
+    let r = match cancel_dictionary.get(&x) {
+      Some(s) => s,
+      None => panic!("Cannot find cancel address for cancel level: {}", x),
+    };
+    return r.clone() + offset;
   }
 }
 
 impl Move {
-  fn idle(&self) -> bool {
+  pub fn idle(&self) -> bool {
     return self.first_frame_flag_val("idle") == 1;
   }
 
-  fn move_id(&self) -> i32 {
+  pub fn move_id(&self) -> i32 {
     return self.first_frame_flag_val("move_id");
   }
 
-  fn cancel_level(&self) -> i32 {
+  pub fn cancel_level(&self) -> i32 {
     return self.first_frame_flag_val_with_default("cancel_level", 0);
   }
 
   fn first_frame(&self) -> &Frame {
     return &self.frames[0];
+  }
+
+  fn estimated_length(&self) -> i32 {
+    return (self.frames.len() as i32) * ALLOCATED_BYTECODES + 2;
   }
 
   fn first_frame_flag_val(&self, key: &str) -> i32 {
@@ -199,12 +185,12 @@ impl Move {
     return r.clone();
   }
 
-  fn assemble_my_frames(&self, idle_frame_address: i32, allocated_insts: i32, possible_cancels_for_one_file: Vec<i32>, inst_file: &InstFile) -> Vec<i32>{
+  fn assemble_my_frames(&self, idle_frame_address: i32, allocated_insts: i32, possible_cancels_for_one_file: Vec<i32>, inst_file: &InstFile, cancel_area: &CancelArea) -> Vec<i32>{
     let mut r: Vec<i32> = Vec::new();
     for f in self.frames.iter() {
-      r.push_all(&f.assemble_contents(idle_frame_address, allocated_insts, inst_file, possible_cancels_for_one_file.clone()));
+      r.push_all(&f.assemble_contents(idle_frame_address, allocated_insts, inst_file, possible_cancels_for_one_file.clone(), cancel_area, self));
     }
-    r.push_all(&[Inst::JMP as i32, idle_frame_address]);
+    r.push_all(&[JMP, idle_frame_address]);
     return r;
   }
 }
@@ -215,15 +201,26 @@ impl InstFile {
     let possible_cancels = self.assemble_possible_cancels();
     let mut r: Vec<i32> = Vec::new();
     self.output_cancel_tree(&possible_cancels);
+
+    let cancel_area: CancelArea = canceling_assemblier::get_canceling_area(&self.moves, &possible_cancels, self);
     for m in self.moves.iter() {
       let c: i32 = m.move_id();
       let possible_cancels_for_one_file = match possible_cancels.get(&c) {
         Some(s) => s,
         None => panic!("possible_cancels not detected"),
       };
-      r.push_all(&m.assemble_my_frames(0, ALLOCATED_BYTECODES, possible_cancels_for_one_file.clone() , self));
+      r.push_all(&m.assemble_my_frames(0, ALLOCATED_BYTECODES, possible_cancels_for_one_file.clone() , self, &cancel_area));
     }
+    r.push_all(&cancel_area.inst);
     return r;
+  }
+
+  fn estimated_length(&self) -> i32{
+    let mut c = 0;
+    for m in self.moves.iter() {
+      c = c + m.estimated_length();
+    }
+    return c;
   }
 
   fn assemble_possible_cancels(&self) -> HashMap<i32, Vec<i32>> {
@@ -253,7 +250,7 @@ impl InstFile {
   }
 
 // move code such as: 0x623b and etc
-  fn get_move_location(&self, move_code: i32) -> i32 {
+  pub fn get_move_location(&self, move_code: i32) -> i32 {
     let r: &i32 = match self.dictionary.get(&move_code) {
       Some(s) => s,
       None => panic!("cannot retrieve anything from the move_code: {}", move_code),
@@ -317,7 +314,7 @@ fn assemble_moves(groups: HashMap<String, Vec<String>>, data: &HashMap<String, H
     }
     iter_move.frames.sort_by(|a,b| a.texture_id.cmp(&b.texture_id));
     moves.push(iter_move);
-    moves.sort_by(|a,b| b.idle().cmp(&a.idle()));
+    moves.sort_by(|a,b| a.cancel_level().cmp(&b.cancel_level()));
   }
   return moves;
 }
@@ -346,6 +343,7 @@ fn output_move_map(move_map: &HashMap<i32, i32>) {
     println!("{}", format!(" - {:X} -> {}", k, v));
   }
   println!("");
+
 }
 
 pub fn save_with_json(filepath: &str, contents: Vec<i32>) -> bool{

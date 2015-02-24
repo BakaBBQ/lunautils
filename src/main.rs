@@ -6,6 +6,8 @@ extern crate regex;
 mod inst_assemblier;
 mod texture_assemblier;
 mod fileutils;
+mod canceling_assemblier;
+mod insts;
 
 use std::os;
 use std::old_io::File;
@@ -14,6 +16,9 @@ use std::collections::HashMap;
 use serialize::{json, Encodable, Encoder};
 use std::old_path::posix::Path;
 
+
+
+static END: i32 = 0xff;
 
 #[derive(Encodable)]
 struct FrameData {
@@ -35,6 +40,8 @@ fn print_help() {
 converts frames.json file into clojure-friendly new json files
 
 the reason why we need json is because we need more jsons
+
+currently VERY VERY ugly, planning to rewrite this
 ---------------------------
 Usage: lunautils framesjson";
   println!("{}", help_msg);

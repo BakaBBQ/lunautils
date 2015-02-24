@@ -13,5 +13,9 @@ the code is extremely dirty right now.
 
 I am extremely new to rust and pointers, ownerships sure are giving me a headache.
 
+==== Other words
+
+this compiler has many built-in flaws in its design, planning to rewrite it.
+
 ==== License
 Distributed under the Simplified BSD License, see the LICENSE file for more details.
